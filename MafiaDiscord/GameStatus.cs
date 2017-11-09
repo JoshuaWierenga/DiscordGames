@@ -5,6 +5,9 @@
         Stopped,
         Starting,
         Day,
-        Night
+        Night,
+        NightMafia,
+        NightPolice,
+        NightDoctor
     }
 }

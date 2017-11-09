@@ -9,18 +9,18 @@ namespace MafiaDiscord
 {
     internal class Program
     {
-        private static GameStatus gameStatus;
-        private static bool _nightTime;
+        private const int RoundTime = 60000;
+
+        private static GameStatus _gameStatus;
+        private static GameStatus _gameNightStatus;
         private static int round = 1;
 
-        private static List<Player> _players = new List<Player>();
+        private static readonly List<Player> Players = new List<Player>();
 
-        private static List<Role> _roles = new List<Role>
+        private static readonly List<Role> Roles = new List<Role>
         {
             Role.Mafia
         };
-
-        private static readonly Random Random = new Random();
 
         private static readonly DiscordSocketClient Client = new DiscordSocketClient();
 
@@ -33,243 +33,154 @@ namespace MafiaDiscord
             await Client.LoginAsync(TokenType.Bot, token);
             await Client.StartAsync();
             await Task.Delay(-1);
+        }
 
-            /*while (true)
-            {
-                switch (Console.ReadLine())
-                {
-                    case "start game":
-                        {
-                            _users = _users.OrderBy(x => _random.Next()).ToList();
-
-                            var i = 0;
-                            foreach (var role in _roles)
-                            {
-                                _players.Add(new Player(_users[i], role));
-                                i++;
-                            }
-                            while (i < _users.Count)
-                            {
-                                _players.Add(new Player(_users[i], Role.Civilian));
-                                i++;
-                            }
-
-                            _gameStarted = true;
-
-                            break;
-                        }
-
-                    case "status":
-                        {
-                            Console.WriteLine("game is " + (_gameStarted ? "" : "not ") + "in progress");
-                            if (_gameStarted)
-                            {
-                                foreach (var player in _players)
-                                {
-                                    if (player.Alive)
-                                    {
-                                        Console.WriteLine(player.Name + " is alive and has the " 
-                                            + player.Role + " role and has "
-                                            + player.Votes + " votes against them");
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine( player.Name + " is dead and had the " + player.Role + " role");
-                                    }
-
-                                }
-                            }
-                            break;
-                        }
-
-                    case string input when input.StartsWith("vote"):
-                        {
-                            if (_gameStarted && !_nightTime)
-                            {
-                                var splitInput = input.Remove(0, 5).Split(' ');
-                                var voter = _players.Find(p => p.Name == splitInput[0]);
-                                if (voter != null && !voter.Voted)
-                                {
-                                    var voted = _players.FirstOrDefault(p => p.Name == splitInput[1]);
-                                    if (voted != null)
-                                    {
-                                        voted.Votes++;
-                                        voter.Voted = true;
-                                    }
-                                }
-                            }
-                            break;
-                        }
-
-
-                    case "end voting":
-                        {
-                            if (_gameStarted && !_nightTime)
-                            {
-                                int playerMaxVote = _players.Select(player => player.Votes).Max();
-                                var playerMaxVotes = _players.Where(player => player.Votes == playerMaxVote).ToList();
-                                if (playerMaxVotes.Count == 1)
-                                {
-                                    var votedPlayer = playerMaxVotes.First();
-                                    votedPlayer.Alive = false;
-                                    Console.WriteLine(votedPlayer.Name + " is now dead, their role was " + votedPlayer.Role);
-                                }
-
-                                for (var i = 0; i < _players.Count; i++)
-                                {
-                                    var player = _players[i];
-                                    player.Votes = 0;
-                                    player.Voted = false;
-                                }
-                            }
-                            break;
-                        }
-
-
-                    case "continue game":
-                        {
-                            break;
-                        }
-
-                }
-            }*/
-
+        private static Task Log(LogMessage msg)
+        {
+            Console.WriteLine(msg.ToString());
+            return Task.CompletedTask;
         }
 
         private static async Task MessageReceived(SocketMessage message)
         {
-            switch (message.Content)
+            if (message.Channel is SocketGuildChannel)
             {
-                case "!mafia start":
+                switch (message.Content)
+                {
+                    case "!mafia start":
                     {
-                        switch (gameStatus)
+                        switch (_gameStatus)
                         {
                             case GameStatus.Stopped:
-                                {
-                                    gameStatus = GameStatus.Starting;
-                                    await message.Channel.SendMessageAsync("Game is starting, send !mafia join to join the game");
-                                    break;
-                                }
+                            {
+                                _gameStatus = GameStatus.Starting;
+                                await message.Channel.SendMessageAsync(
+                                    "Game is starting, send !mafia join to join the game");
+                                break;
+                            }
                             case GameStatus.Starting:
+                            {
+                                if (Players.Count <= Roles.Count)
                                 {
-                                    if (_players.Count <= _roles.Count)
-                                    {
-                                        await message.Author.SendMessageAsync("This game does not have enough users to start");
-                                    }
-
-                                    var i = 0;
-                                    string startMessage = "Game has started \n" +
-                                                       "players:\n";
-                                    var mafiaMessage = "Mafia members:\n";
-                                    var policeMessage = "Police members:\n";
-
-                                    foreach (var role in _roles)
-                                    {
-                                        _players[i].Role = role;
-                                        startMessage += _players[i].Name + '\n';
-                                        if (role == Role.Mafia)
-                                        {
-                                            mafiaMessage += _players[i].Name + '\n';
-                                        }
-                                        else if (role == Role.Police)
-                                        {
-                                            policeMessage += _players[i].Name + '\n';
-                                        }
-                                        i++;
-                                    }
-
-                                    for (; i < _players.Count; i++)
-                                    {
-                                        startMessage += _players[i].Name + '\n';
-                                    }
-
-                                    foreach (var player in _players)
-                                    {
-                                        var playerDiscordUser = Client.GetUser(player.Discordid);
-
-                                        string userMessage = "You are ";
-
-                                        switch (player.Role)
-                                        {
-                                            case Role.Mafia:
-                                            case Role.Police:
-                                                userMessage += "a member of the ";
-                                                break;
-                                            case Role.Doctor:
-                                                userMessage += "the ";
-                                                break;
-                                            case Role.Civilian:
-                                                userMessage += "a ";
-                                                break;
-                                        }
-                                        
-                                        userMessage += player.Role.ToString().ToLower();
-
-                                        await playerDiscordUser.SendMessageAsync(userMessage);
-
-                                        if (player.Role == Role.Mafia)
-                                        {
-                                            await playerDiscordUser.SendMessageAsync(mafiaMessage);
-                                        }
-                                        else if (player.Role == Role.Police)
-                                        {
-                                            await playerDiscordUser.SendMessageAsync(policeMessage);
-                                        }
-                                    }
-
-                                    gameStatus = GameStatus.Day;
-
-                                    await message.Channel.SendMessageAsync(startMessage);
-                                    break;
+                                    await message.Author.SendMessageAsync(
+                                        "This game does not have enough users to start");
                                 }
+
+                                var i = 0;
+                                string startMessage = "Game has started \n" +
+                                                      "players:\n\n" +
+                                                      "Please vote for who you think the mafia are, send !mafia continue when you are done";
+                                var mafiaMessage = "Mafia members:\n";
+                                var policeMessage = "Police members:\n";
+
+                                foreach (var role in Roles)
+                                {
+                                    Players[i].Role = role;
+                                    startMessage += Players[i].Name + '\n';
+                                    if (role == Role.Mafia)
+                                    {
+                                        mafiaMessage += Players[i].Name + '\n';
+                                    }
+                                    else if (role == Role.Police)
+                                    {
+                                        policeMessage += Players[i].Name + '\n';
+                                    }
+                                    i++;
+                                }
+
+                                for (; i < Players.Count; i++)
+                                {
+                                    startMessage += Players[i].Name + '\n';
+                                }
+
+                                foreach (var player in Players)
+                                {
+                                    var playerDiscordUser = Client.GetUser(player.Discordid);
+
+                                    var userMessage = "You are ";
+
+                                    switch (player.Role)
+                                    {
+                                        case Role.Mafia:
+                                        case Role.Police:
+                                            userMessage += "a member of the ";
+                                            break;
+                                        case Role.Doctor:
+                                            userMessage += "the ";
+                                            break;
+                                        case Role.Civilian:
+                                            userMessage += "a ";
+                                            break;
+                                    }
+
+                                    userMessage += player.Role.ToString().ToLower();
+
+                                    await playerDiscordUser.SendMessageAsync(userMessage);
+
+                                    if (player.Role == Role.Mafia)
+                                    {
+                                        await playerDiscordUser.SendMessageAsync(mafiaMessage);
+                                    }
+                                    else if (player.Role == Role.Police)
+                                    {
+                                        await playerDiscordUser.SendMessageAsync(policeMessage);
+                                    }
+                                }
+
+                                _gameStatus = GameStatus.Day;
+
+                                await message.Channel.SendMessageAsync(startMessage);
+                                break;
+                            }
                         }
                         break;
                     }
-                case "!mafia join":
+                    case "!mafia join":
                     {
-                        if (gameStatus != GameStatus.Starting)
+                        if (_gameStatus != GameStatus.Starting)
                         {
                             await message.Author.SendMessageAsync("The game is not currently starting");
                             break;
                         }
-                        if (_players.FirstOrDefault(p => p.Discordid == message.Author.Id) != null)
+                        if (Players.FirstOrDefault(p => p.Discordid == message.Author.Id) != null)
                         {
                             await message.Author.SendMessageAsync("You are already part of this game");
                             break;
                         }
 
-                        _players.Add(new Player(message.Author.Id, message.Author.Username, Role.Civilian));
+                        Players.Add(new Player(message.Author.Id, message.Author.Username, Role.Civilian));
 
-                        if (_players.Count > _roles.Count)
+                        if (Players.Count > Roles.Count)
                         {
-                            await message.Channel.SendMessageAsync("game has enough people to start, resend !mafia start to start the game");
+                            await message.Channel.SendMessageAsync(
+                                "game has enough people to start, resend !mafia start to start the game");
                         }
 
                         break;
                     }
-                case "!mafia status":
+                    case "!mafia status":
                     {
                         string statusMessage;
 
-                        if (gameStatus == GameStatus.Starting || gameStatus == GameStatus.Stopped)
+                        if (_gameStatus == GameStatus.Starting || _gameStatus == GameStatus.Stopped)
                         {
-                            statusMessage = "game is " + gameStatus.ToString().ToLower() + '\n';
+                            statusMessage = "game is " + _gameStatus.ToString().ToLower() + '\n';
                         }
                         else
                         {
-                            statusMessage = "game is in a " + gameStatus.ToString().ToLower() + " phase\n";
+                            statusMessage = "game is in a " + _gameStatus.ToString().ToLower() + " phase\n";
                         }
-                        if (gameStatus != GameStatus.Stopped)
+                        if (_gameStatus != GameStatus.Stopped)
                         {
-                            foreach (var player in _players)
+                            foreach (var player in Players)
                             {
                                 statusMessage += player.Name;
 
                                 if (player.Alive)
                                 {
-                                    statusMessage += " is alive, has the " 
-                                        + player.Role + " role and has "
-                                        + player.Votes + " votes against them";
+                                    statusMessage += " is alive, has the "
+                                                     + player.Role + " role and has "
+                                                     + player.Votes + " votes against them";
                                 }
                                 else
                                 {
@@ -283,9 +194,9 @@ namespace MafiaDiscord
                         await message.Channel.SendMessageAsync(statusMessage);
                         break;
                     }
-                case string input when input.StartsWith("!mafia vote"):
+                    case string input when input.StartsWith("!mafia vote"):
                     {
-                        var voterPlayer = _players.Find(p => p.Discordid == message.Author.Id);
+                        var voterPlayer = Players.Find(p => p.Discordid == message.Author.Id);
 
                         if (voterPlayer == null)
                         {
@@ -297,14 +208,14 @@ namespace MafiaDiscord
                             await message.Author.SendMessageAsync("You have already voted in this round");
                             return;
                         }
-                        if (gameStatus != GameStatus.Day)
+                        if (_gameStatus != GameStatus.Day)
                         {
                             await message.Author.SendMessageAsync("You can only vote during the day");
                             break;
                         }
 
                         ulong votedId = message.MentionedUsers.FirstOrDefault()?.Id ?? 0;
-                        var votedPlayer = _players.Find(p => p.Discordid == votedId);
+                        var votedPlayer = Players.Find(p => p.Discordid == votedId);
 
                         if (votedPlayer == null)
                         {
@@ -319,16 +230,73 @@ namespace MafiaDiscord
                         }
 
                         votedPlayer.Votes++;
-                        votedPlayer.Voted = true;
+                        voterPlayer.Voted = true;
                         break;
                     }
+                    case "!mafia continue":
+                    {
+                        await EndVoting(message.Channel);
+                        _gameStatus = _gameStatus == GameStatus.Day ? GameStatus.Night : GameStatus.Day;
+                        _gameNightStatus = GameStatus.NightMafia;
+                        break;
+                    }                     
+                }
+            }
+            else
+            {
+                switch (message.Content)
+                {
+                    case string input when input.StartsWith("!mafia vote"):
+                        if ()
+                        break;
+                }
             }
         }
 
-        private static Task Log(LogMessage msg)
+        private static async Task EndVoting(ISocketMessageChannel channel)
         {
-            Console.WriteLine(msg.ToString());
-            return Task.CompletedTask;
+            if (_gameStatus != GameStatus.Day)
+            {
+                return;
+            }
+
+            int maxVote = Players.Select(player => player.Votes).Max();
+            var playerMaxVotes = Players.Where(player => player.Votes == maxVote).ToList();
+            if (playerMaxVotes.Count == 1)
+            {
+                var votedPlayer = playerMaxVotes.First();
+                votedPlayer.Alive = false;
+
+                string deathMessage = votedPlayer.Name + " received " + votedPlayer.Votes
+                    + (votedPlayer.Votes == 1 ? " vote" : " votes") + " and is now dead, they were ";
+
+                switch (votedPlayer.Role)
+                {
+                    case Role.Mafia:
+                    case Role.Police:
+                        deathMessage += "a member of the ";
+                        break;
+                    case Role.Doctor:
+                        deathMessage += "the ";
+                        break;
+                    case Role.Civilian:
+                        deathMessage += "a ";
+                        break;
+                }
+
+                deathMessage += votedPlayer.Role.ToString().ToLower();
+
+                await channel.SendMessageAsync(deathMessage);
+
+                for (var i = 0; i < Players.Count; i++)
+                {
+                    var player = Players[i];
+                    player.Votes = 0;
+                    player.Voted = false;
+                }
+
+            }
+
         }
     }
 }
