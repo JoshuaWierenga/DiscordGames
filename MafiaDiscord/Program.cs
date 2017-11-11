@@ -1,26 +1,49 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using DSharpPlus;
-using DSharpPlus.CommandsNext;
-using DSharpPlus.CommandsNext.Exceptions;
-using DSharpPlus.Entities;
-using DSharpPlus.EventArgs;
-using DSharpPlus.Interactivity;
-using Newtonsoft.Json;
+﻿// --------------------------------------------------------------------------------------------------------------------
+// <copyright file="Program.cs" company="n/a">
+//   n/a
+// </copyright>
+// --------------------------------------------------------------------------------------------------------------------
 
 namespace MafiaDiscord
 {
+    using System;
+    using System.IO;
+    using System.Text;
+    using System.Threading.Tasks;
+
+    using DSharpPlus;
+    using DSharpPlus.CommandsNext;
+    using DSharpPlus.CommandsNext.Exceptions;
+    using DSharpPlus.Entities;
+    using DSharpPlus.EventArgs;
+    using DSharpPlus.Interactivity;
+
+    using Newtonsoft.Json;
+
+    /// <summary>
+    /// Main class for the discord bot
+    /// </summary>
     internal class Program
     {
-        private static readonly List<Player> Players = new List<Player>();
+        /// <summary>
+        /// Instance of a discord client
+        /// </summary>
+        private static DiscordClient client;
 
-        private static DiscordClient _client;
-        private static CommandsNextModule _commands;
+        /// <summary>
+        /// Instance of a CommandNext Module
+        /// </summary>
+        private static CommandsNextModule commands;
 
+        /// <summary>
+        /// Entry point for the discord bot
+        /// </summary>
+        /// <param name="args">
+        /// Command line arguments
+        /// </param>
+        /// <returns>
+        /// <see cref="Task"/>.
+        /// </returns>
         private static async Task Main(string[] args)
         {
             string json;
@@ -30,63 +53,114 @@ namespace MafiaDiscord
                 {
                     json = await sr.ReadToEndAsync();
                 }
-            }           
+            }
             var config = JsonConvert.DeserializeObject<ConfigJson>(json);
 
-            _client = new DiscordClient(new DiscordConfiguration
+            client = new DiscordClient(new DiscordConfiguration
             {
                 Token = config.Token,
                 LogLevel = LogLevel.Debug,
                 UseInternalLogHandler = true
             });
-            _client.GuildAvailable += GuildAvailable;
-            _client.ClientErrored += ClientErrored;
-            _client.UseInteractivity(new InteractivityConfiguration
+            client.GuildAvailable += GuildAvailable;
+            client.ClientErrored += ClientErrored;
+            client.UseInteractivity(new InteractivityConfiguration
             {
-                PaginationBehaviour =  TimeoutBehaviour.Ignore,
+                PaginationBehaviour = TimeoutBehaviour.Ignore,
                 PaginationTimeout = TimeSpan.FromMinutes(5),
                 Timeout = TimeSpan.FromMinutes(2)
             });
 
-            _commands = _client.UseCommandsNext(new CommandsNextConfiguration
+            commands = client.UseCommandsNext(new CommandsNextConfiguration
             {
                 StringPrefix = config.CommandPrefix
             });
-            _commands.CommandExecuted += CommandExecuted;
-            _commands.CommandErrored += CommandErrored;
-            _commands.RegisterCommands<MafiaCommands>();
+            commands.CommandExecuted += CommandExecuted;
+            commands.CommandErrored += CommandErrored;
+            commands.RegisterCommands<Commands>();
 
-            await _client.ConnectAsync();
+            await client.ConnectAsync();
             await Task.Delay(-1);
         }
 
+        /// <summary>
+        /// callback for when the bot connects a discord guild
+        /// </summary>
+        /// <param name="eventArgs">
+        /// arguments relating to the connection
+        /// </param>
+        /// <returns>
+        /// <see cref="Task"/>.
+        /// </returns>
         private static Task GuildAvailable(GuildCreateEventArgs eventArgs)
         {
-            eventArgs.Client.DebugLogger.LogMessage(LogLevel.Info, "Mafia Bot", 
-                $"Guild available: {eventArgs.Guild.Name}", DateTime.Now);
+            eventArgs.Client.DebugLogger.LogMessage(
+                LogLevel.Info,
+                "Mafia Bot",
+                $"Guild available: {eventArgs.Guild.Name}",
+                DateTime.Now);
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// callback for when the bot has an error
+        /// </summary>
+        /// <param name="eventArgs">
+        /// arguments relating to the error
+        /// </param>
+        /// <returns>
+        /// <see cref="Task"/>.
+        /// </returns>
         private static Task ClientErrored(ClientErrorEventArgs eventArgs)
         {
-            eventArgs.Client.DebugLogger.LogMessage(LogLevel.Error, "Mafia Bot", 
-                $"Exception occured: {eventArgs.Exception.GetType()}: {eventArgs.Exception.Message}", DateTime.Now);
+            eventArgs.Client.DebugLogger.LogMessage(
+                LogLevel.Error,
+                "Mafia Bot",
+                $"Exception occurred: {eventArgs.Exception.GetType()}: {eventArgs.Exception.Message}",
+                DateTime.Now);
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// callback for when the bot has finished executing a command next command
+        /// </summary>
+        /// <param name="eventArgs">
+        /// arguments relating to the command
+        /// </param>
+        /// <returns>
+        /// <see cref="Task"/>.
+        /// </returns>
         private static Task CommandExecuted(CommandExecutionEventArgs eventArgs)
         {
-            eventArgs.Context.Client.DebugLogger.LogMessage(LogLevel.Info, "Mafia Bots", 
-                $"{eventArgs.Context.User.Username} successfully executed '{eventArgs.Command.QualifiedName}'", DateTime.Now);
+            eventArgs.Context.Client.DebugLogger.LogMessage(
+                LogLevel.Info,
+                "Mafia Bot",
+                $"{eventArgs.Context.User.Username} successfully executed '{eventArgs.Command.QualifiedName}'",
+                DateTime.Now);
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// callback for when the bot errors while executing a command next command
+        /// </summary>
+        /// <param name="eventArgs">
+        /// arguments relating to the error
+        /// </param>
+        /// <returns>
+        /// <see cref="Task"/>.
+        /// </returns>
         private static async Task CommandErrored(CommandErrorEventArgs eventArgs)
         {
+            string errorLog =
+                $"{eventArgs.Context.User.Username} tried executing '{eventArgs.Command?.QualifiedName ?? "<unknown command>"}'"
+                + $" but it errored: {eventArgs.Exception.GetType()}: {eventArgs.Exception.Message ?? "<no message>"}";
+
             // let's log the error details
-            eventArgs.Context.Client.DebugLogger.LogMessage(LogLevel.Error, "Mafia Bot",
-                $"{eventArgs.Context.User.Username} tried executing '{eventArgs.Command?.QualifiedName ?? "<unknown command>"}'" +
-                $" but it errored: {eventArgs.Exception.GetType()}: {eventArgs.Exception.Message ?? "<no message>"}", DateTime.Now);
+            eventArgs.Context.Client.DebugLogger.LogMessage(
+                LogLevel.Error,
+                "Mafia Bot",
+                errorLog,
+                DateTime.Now);
 
             // let's check if the error is a result of lack
             // of required permissions
@@ -108,97 +182,7 @@ namespace MafiaDiscord
             }
         }
 
-        
-
-        /*private static async Task MessageReceived(SocketMessage message)
-        {
-            switch (message.Content)
-            {
-                case "!mafia start" when message.Channel is SocketGuildChannel && _gameStatus == GameStatus.Stopped:
-                    {
-                        _gameStatus = GameStatus.Starting;
-                        await message.Channel.SendMessageAsync(
-                            "Game is starting, send !mafia join to join the game");
-                        break;
-                    }
-                case "!mafia start" when message.Channel is SocketGuildChannel && _gameStatus == GameStatus.Starting:
-                    {
-                        if (Players.Count <= MafiaCount + PoliceCount)
-                        {
-                            await message.Author.SendMessageAsync("This game does not have enough users to start");
-                        }
-
-                        var random = new Random();
-
-                        var newMafia = Players.GetRange(random.Next(0, Players.Count - MafiaCount), MafiaCount)
-                                              .Select(p => { p.Role = Role.Mafia; return p; }).ToList();
-                        Players.GetRange(random.Next(0, Players.Count - PoliceCount), PoliceCount).ForEach(p => p.Role = Role.Doctor);
-                        Players.GetRange(random.Next(0, Players.Count - 1), 1)
-                               .Select(p => { p.Role = Role.Doctor; return p; }).ToList();
-
-
-
-                        /*var mafiaMessage = "Mafia members:\n";
-                        var policeMessage = "Police members:\n";
-
-                        var i = 0;
-                        foreach (var role in Roles)
-                        {
-                            Players[i].Role = role;
-                            if (role == Role.Mafia)
-                            {
-                                mafiaMessage += Players[i].Name + '\n';
-                            }
-                            else if (role == Role.Police)
-                            {
-                                policeMessage += Players[i].Name + '\n';
-                            }
-                            i++;
-                        }
-
-                        foreach (var player in Players)
-                        {
-                            var playerDiscordUser = Client.GetUser(player.Discordid);
-
-                            string userMessage = "You are "
-                                                 + GetRolePrefix(player.Role)
-                                                 + player.Role.ToString().ToLower();
-
-                            await playerDiscordUser.SendMessageAsync(userMessage);
-
-                            if (player.Role == Role.Mafia)
-                            {
-                                await playerDiscordUser.SendMessageAsync(mafiaMessage);
-                            }
-                            else if (player.Role == Role.Police)
-                            {
-                                await playerDiscordUser.SendMessageAsync(policeMessage);
-                            }
-                        }
-
-                        break;
-                    }
-                case "!mafia join" when message.Channel is SocketGuildChannel && _gameStatus == GameStatus.Starting:
-                    {
-                        if (Players.FirstOrDefault(p => p.Discordid == message.Author.Id) != null)
-                        {
-                            await message.Channel.SendMessageAsync("You are already in this game");
-                            break;
-                        }
-
-                        Players.Add(new Player(message.Author.Id, message.Author.Username, Role.Civilian));
-
-                        if (Players.Count > MafiaCount + PoliceCount + DoctorCount)
-                        {
-                            await message.Channel.SendMessageAsync(
-                                "game has enough people to start, resend !mafia start to start the game");
-                        }
-                        break;
-                    }
-            }
-        }*/
-
-        private static async Task EndVoting()
+        /*private static async Task EndVoting()
         {
             int maxVote = Players.Select(player => player.Votes).Max();
             var playerMaxVotes = Players.Where(player => player.Votes == maxVote).ToList();
@@ -217,18 +201,6 @@ namespace MafiaDiscord
             //await gameChannel.SendMessageAsync(votedPlayer.Name + " received " + votedPlayer.Votes
             //  + (votedPlayer.Votes == 1 ? " vote" : " votes") + " and is now dead, they were "
             //+ GetRolePrefix(votedPlayer.Role) + votedPlayer.Role.ToString().ToLower());
-        }
-
-        private static async Task StartDay()
-        {
-            var startMessage = "Alive players:\n";
-
-            foreach (var player in Players.Where(p => p.Alive))
-            {
-                startMessage += player.Name + '\n';
-            }
-
-            //await gameChannel.SendMessageAsync(startMessage + "Please vote for who you think the mafia are, send !mafia continue when you are done");
         }
 
         private static async Task HandleVote(Player voter, Player voted, bool privateVote)
@@ -253,22 +225,6 @@ namespace MafiaDiscord
             voter.Voted = true;
 
             //await gameChannel.SendMessageAsync("Your vote against " + voted.Name + " has been counted");
-        }
-
-        private static string GetRoleWithPrefix(Role role)
-        {
-            switch (role)
-            {
-                case Role.Mafia:
-                case Role.Police:
-                    return "a member of the " + role;
-                case Role.Doctor:
-                    return "the " + role;
-                case Role.Civilian:
-                    return "a " + role;
-                default:
-                    return role.ToString();
-            }
-        }
+        }*/
     }
 }

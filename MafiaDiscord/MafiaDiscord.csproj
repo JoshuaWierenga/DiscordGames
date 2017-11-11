@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="MafiaDiscord.csproj.DotSettings" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="DSharpPlus">
       <Version>3.2.3</Version>
     </PackageReference>
