@@ -56,11 +56,6 @@ namespace MafiaDiscord
         private TimeSpan roundTime = TimeSpan.FromMinutes(2);
 
         /// <summary>
-        /// The status of the game
-        /// </summary>
-        private GameStatus gameStatus = GameStatus.Starting;
-
-        /// <summary>
         /// The round the game is up to
         /// </summary>
         private int round = 1;
@@ -102,16 +97,16 @@ namespace MafiaDiscord
         /// <returns>
         /// <see cref="Task"/>.
         /// </returns>
-        public async Task Run()
+        public async Task RunAsync()
         {
             await this.message.ModifyAsync(
                 null,
                 new DiscordEmbedBuilder
-                    {
-                        Title = "Mafia: Starting"
-            });
-            await this.SetupPlayers();
-            await this.HandleDayVote();
+                {
+                    Title = "Mafia: Starting"
+                });
+            await this.SetupPlayersAsync();
+            await this.HandleDayAsync();
 
         }
 
@@ -121,7 +116,7 @@ namespace MafiaDiscord
         /// <returns>
         /// <see cref="Task"/>.
         /// </returns>
-        private async Task SetupPlayers()
+        private async Task SetupPlayersAsync()
         {
             var roleList = new List<Role>();
             for (var i = 0; i < this.mafiaCount; i++)
@@ -141,13 +136,18 @@ namespace MafiaDiscord
 
             var mafia = new List<Player>();
             var police = new List<Player>();
+            var civilians = new List<Player>();
             Player doctor = null;
 
-            for (var i = 0; i < roleList.Count; i++)
+            for (var i = 0; i < this.players.Length; i++)
             {
-                var newRole = roleList[i];
                 var player = this.players[i];
-                player.Role = newRole;
+                var newRole = player.Role;
+                if (i < roleList.Count)
+                {
+                    newRole = roleList[i];
+                    player.Role = newRole;
+                }
 
                 switch (newRole)
                 {
@@ -157,15 +157,18 @@ namespace MafiaDiscord
                     case Role.Police:
                         police.Add(player);
                         break;
+                    case Role.Civilian:
+                        civilians.Add(player);
+                        break;
                     case Role.Doctor:
                         doctor = player;
                         break;
                 }
             }
 
-            await this.AlertPlayerRoles(mafia, police, doctor);
+            this.players.Shuffle();
 
-            this.gameStatus = GameStatus.Day;
+            await this.AlertPlayerRolesAsync(mafia, police, civilians, doctor);
         }
 
         /// <summary>
@@ -177,13 +180,16 @@ namespace MafiaDiscord
         /// <param name="police">
         /// List of players who are police
         /// </param>
+        /// <param name="civilians">
+        /// List of players who are civilians
+        /// </param>
         /// <param name="doctor">
         /// Player who is the doctor
         /// </param>
         /// <returns>
         /// <see cref="Task"/>.
         /// </returns>
-        private async Task AlertPlayerRoles(List<Player> mafia, List<Player> police, Player doctor)
+        private async Task AlertPlayerRolesAsync(List<Player> mafia, List<Player> police, List<Player> civilians, Player doctor)
         {
             var mafiaEmbed = new DiscordEmbedBuilder
             {
@@ -194,17 +200,23 @@ namespace MafiaDiscord
             var policeEmbed = new DiscordEmbedBuilder
             {
                 Title = "Mafia: Role Announcement",
-                Description = "You are " + Role.Mafia.GetRoleWithPrefix(this.mafiaCount, this.policeCount) +
+                Description = "You are " + Role.Police.GetRoleWithPrefix(this.mafiaCount, this.policeCount) +
                               (this.policeCount > 1 ? ", Other members are:" : string.Empty)
             };
-            var doctorEmbed = new DiscordEmbedBuilder
+            var civilianEmbed = new DiscordEmbedBuilder
             {
                 Title = "Mafia: Role Announcement",
-                Description = "You are " + Role.Mafia.GetRoleWithPrefix(this.mafiaCount, this.policeCount)
+                Description = "You are " + Role.Civilian.GetRoleWithPrefix(this.mafiaCount, this.policeCount)
             };
 
-            mafia.ForEach(p => mafiaEmbed.AddField("Mafia Member", p.DiscordUser.Username));
-            police.ForEach(p => policeEmbed.AddField("Police Member", p.DiscordUser.Username));
+            if (this.mafiaCount > 1)
+            {
+                mafia.ForEach(p => mafiaEmbed.AddField("Mafia Member", p.DiscordUser.Username));
+            }
+            if (this.policeCount > 1)
+            {
+                police.ForEach(p => policeEmbed.AddField("Police Member", p.DiscordUser.Username));
+            }          
 
             mafia.ForEach(async p =>
             {
@@ -216,14 +228,26 @@ namespace MafiaDiscord
                 var playerChat = await this.client.CreateDmAsync(p.DiscordUser);
                 await playerChat.SendMessageAsync(null, false, policeEmbed);
             });
+            civilians.ForEach(async p =>
+            {
+                var playerChat = await this.client.CreateDmAsync(p.DiscordUser);
+                await playerChat.SendMessageAsync(null, false, civilianEmbed);
+            });
+
             if (this.haveDoctor)
             {
+                var doctorEmbed = new DiscordEmbedBuilder
+                {
+                    Title = "Mafia: Role Announcement",
+                    Description = "You are" + Role.Doctor.GetRoleWithPrefix(this.mafiaCount, this.policeCount)
+                };
                 var playerChat = await this.client.CreateDmAsync(doctor.DiscordUser);
                 await playerChat.SendMessageAsync(null, false, doctorEmbed);
             }
         }
 
         // TODO: modify to handle all voting
+        // TODO: prevent multiple votes
 
         /// <summary>
         /// Handles voting during the day
@@ -231,14 +255,14 @@ namespace MafiaDiscord
         /// <returns>
         /// <see cref="Task"/>.
         /// </returns>
-        private async Task HandleDayVote()
+        private async Task HandleDayAsync()
         {
-            await this.CreateDayVoteEmbed();
-
-            Thread.Sleep(TimeSpan.FromMinutes(1));
+            await this.CreateDayVoteAsync();
+            Thread.Sleep(TimeSpan.FromSeconds(30));
 
             var mostVotedPlayer = this.players.First();
-
+            var remainingMafia = 0;
+            var remainingNonMafia = 0;
             for (var playerPosition = 'a'; playerPosition - 'a' < this.players.Length; playerPosition++)
             {
                 int playerVoteCount = (await this.message.GetReactionsAsync(
@@ -252,6 +276,36 @@ namespace MafiaDiscord
                 {
                     mostVotedPlayer = this.players[playerPosition - 'a'];
                 }
+
+                if (currentPlayer.Role == Role.Mafia)
+                {
+                    remainingMafia++;
+                }
+                else
+                {
+                    remainingNonMafia++;
+                }
+            }
+
+            await this.message.DeleteAllReactionsAsync("Voting is over");
+
+            mostVotedPlayer.Alive = false;
+            if (mostVotedPlayer.Role == Role.Mafia)
+            {
+                remainingMafia--;
+            }
+            else
+            {
+                remainingNonMafia--;
+            }
+
+            await this.CreateDayVoteResultAsync(mostVotedPlayer);
+
+            Thread.Sleep(TimeSpan.FromSeconds(5));
+
+            if (remainingMafia == 0 || remainingNonMafia == 0)
+            {
+                await this.CreateGameOverAsync();
             }
         }
 
@@ -261,7 +315,7 @@ namespace MafiaDiscord
         /// <returns>
         /// <see cref="Task"/>.
         /// </returns>
-        private async Task CreateDayVoteEmbed()
+        private async Task CreateDayVoteAsync()
         {
             var dayEmbed = new DiscordEmbedBuilder
             {
@@ -269,7 +323,7 @@ namespace MafiaDiscord
                 Description = "Please vote for someone you think the mafia is",
                 Footer = new DiscordEmbedBuilder.EmbedFooter
                 {
-                    Text = "Please click the letter that matches a player the player"
+                    Text = "Please click the letter that matches the player. Please only vote once, extra votes will be ignored"
                 }
             };
 
@@ -287,6 +341,54 @@ namespace MafiaDiscord
                 await this.message.CreateReactionAsync(
                     DiscordEmoji.FromName(this.client, ":regional_indicator_" + playerPosition + ':'));
             }
+        }
+
+        /// <summary>
+        /// Creates and sends the embedded message for the day vote result
+        /// </summary>
+        /// <param name="votedPlayer">
+        /// Player who has been voted off
+        /// </param>
+        /// <returns>
+        /// <see cref="Task"/>.
+        /// </returns>
+        private async Task CreateDayVoteResultAsync(Player votedPlayer)
+        {
+            var dayResultEmbed = new DiscordEmbedBuilder
+            {
+                Title = "Mafia: Day: Vote Result",
+                Description = "You voted for"
+            };
+
+            dayResultEmbed.AddField(
+                votedPlayer.DiscordUser.Username,
+                votedPlayer.Role.GetRoleWithPrefix(this.mafiaCount, this.policeCount));
+
+            await this.message.ModifyAsync(null, dayResultEmbed);
+        }
+
+        /// <summary>
+        /// Creates and sends the embedded message for game over
+        /// </summary>
+        /// <returns>
+        /// <see cref="Task"/>
+        /// </returns>
+        private async Task CreateGameOverAsync()
+        {
+            var gameOverEmbed = new DiscordEmbedBuilder
+            {
+                Title = "Mafia: Game Over",
+                Description = "Game is now over.\nPlayer Roles:"
+            };
+
+            foreach (var player in this.players)
+            {
+                gameOverEmbed.AddField(
+                    player.DiscordUser.Username + " : " + (player.Alive ? "Alive" : "Dead"),
+                    player.Role.GetRoleWithPrefix(this.mafiaCount, this.policeCount));
+            }
+
+            await this.message.ModifyAsync(null, gameOverEmbed);
         }
     }
 }

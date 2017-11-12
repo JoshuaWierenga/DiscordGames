@@ -134,7 +134,7 @@ namespace MafiaDiscord
             }
 
             currentGame = new Mafia(1, 0, false, ctx.Client, msg, players.Select(p => new Player(p)).ToArray());
-            await currentGame.Run();
+            await currentGame.RunAsync();
         }
     }
 }
